@@ -95,6 +95,9 @@ jobs:
           if [[ "$BUILD_OPTIONS_JSON" != "null" && -n "$BUILD_OPTIONS_JSON" ]]; then
             OPTIONS+=(--build-options-json "$BUILD_OPTIONS_JSON")
           fi
+          if [[ "$VARIANT" == "bread-compact-wifi-128x64" ]]; then
+            OPTIONS+=(--language ru-RU)
+          fi
           python scripts/build.py "$BOARD" --name "$VARIANT" "${OPTIONS[@]}"
 
       - name: Upload artifacts

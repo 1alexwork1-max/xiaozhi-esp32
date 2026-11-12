@@ -50,18 +50,25 @@ class EnvironmentSensors {
         if (!ReadReg(bmp_, 0xD0, &id, 1) || id != 0x58) {
             i2c_master_bus_rm_device(bmp_); bmp_ = nullptr; return false;
         }
-        if (!WriteReg(bmp_, 0xE0, 0xB6)) return false;
+        if (!WriteReg(bmp_, 0xE0, 0xB6)) {
+            i2c_master_bus_rm_device(bmp_); bmp_ = nullptr; return false;
+        }
         esp_rom_delay_us(10000);
         uint8_t c[24];
-        if (!ReadReg(bmp_, 0x88, c, sizeof(c))) return false;
+        if (!ReadReg(bmp_, 0x88, c, sizeof(c))) {
+            i2c_master_bus_rm_device(bmp_); bmp_ = nullptr; return false;
+        }
         cal_.t1 = (uint16_t)(c[1] << 8 | c[0]); cal_.t2 = (int16_t)(c[3] << 8 | c[2]);
         cal_.t3 = (int16_t)(c[5] << 8 | c[4]); cal_.p1 = (uint16_t)(c[7] << 8 | c[6]);
         cal_.p2 = (int16_t)(c[9] << 8 | c[8]); cal_.p3 = (int16_t)(c[11] << 8 | c[10]);
         cal_.p4 = (int16_t)(c[13] << 8 | c[12]); cal_.p5 = (int16_t)(c[15] << 8 | c[14]);
         cal_.p6 = (int16_t)(c[17] << 8 | c[16]); cal_.p7 = (int16_t)(c[19] << 8 | c[18]);
         cal_.p8 = (int16_t)(c[21] << 8 | c[20]); cal_.p9 = (int16_t)(c[23] << 8 | c[22]);
-        if (cal_.p1 == 0 || !WriteReg(bmp_, 0xF5, 0xA0)) return false;
-        return WriteReg(bmp_, 0xF4, 0x27);
+        if (cal_.p1 == 0 || !WriteReg(bmp_, 0xF5, 0xA0)) {
+            i2c_master_bus_rm_device(bmp_); bmp_ = nullptr; return false;
+        }
+        // Forced mode: each request starts a fresh temperature/pressure conversion.
+        return true;
     }
 public:
     explicit EnvironmentSensors(i2c_master_bus_handle_t bus) : bus_(bus) {
@@ -87,6 +94,8 @@ public:
     }
     bool ReadBmp(float& temperature, float& pressure_hpa) {
         if (!bmp_ready_) return false;
+        if (!WriteReg(bmp_, 0xF4, 0x25)) return false; // x1 temperature, x1 pressure, forced mode
+        esp_rom_delay_us(10000);
         uint8_t d[6]; if (!ReadReg(bmp_, 0xF7, d, sizeof(d))) return false;
         int32_t ap = ((int32_t)d[0] << 12) | ((int32_t)d[1] << 4) | (d[2] >> 4);
         int32_t at = ((int32_t)d[3] << 12) | ((int32_t)d[4] << 4) | (d[5] >> 4);
