@@ -11,6 +11,9 @@
 #include "assets/lang_config.h"
 
 #include <esp_log.h>
+#include <esp_rom_sys.h>
+#include <cstdio>
+#include <cmath>
 #include <driver/i2c_master.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_vendor.h>
@@ -21,12 +24,98 @@
 
 #define TAG "CompactWifiBoard"
 
+
+class EnvironmentSensors {
+    i2c_master_bus_handle_t bus_;
+    i2c_master_dev_handle_t aht_ = nullptr;
+    i2c_master_dev_handle_t bmp_ = nullptr;
+    struct { uint16_t t1, p1; int16_t t2, t3, p2, p3, p4, p5, p6, p7, p8, p9; } cal_{};
+    bool bmp_ready_ = false;
+    bool AddDevice(uint8_t address, i2c_master_dev_handle_t* handle) {
+        i2c_device_config_t cfg = { .dev_addr_length = I2C_ADDR_BIT_LEN_7, .device_address = address, .scl_speed_hz = 100 * 1000 };
+        return i2c_master_bus_add_device(bus_, &cfg, handle) == ESP_OK;
+    }
+    bool Write(i2c_master_dev_handle_t dev, const uint8_t* data, size_t len) {
+        return dev && i2c_master_transmit(dev, data, len, 100) == ESP_OK;
+    }
+    bool ReadReg(i2c_master_dev_handle_t dev, uint8_t reg, uint8_t* data, size_t len) {
+        return dev && i2c_master_transmit_receive(dev, &reg, 1, data, len, 100) == ESP_OK;
+    }
+    bool WriteReg(i2c_master_dev_handle_t dev, uint8_t reg, uint8_t value) {
+        uint8_t b[2] = {reg, value}; return Write(dev, b, sizeof(b));
+    }
+    bool InitBmp(uint8_t address) {
+        if (!AddDevice(address, &bmp_)) return false;
+        uint8_t id = 0;
+        if (!ReadReg(bmp_, 0xD0, &id, 1) || id != 0x58) {
+            i2c_master_bus_rm_device(bmp_); bmp_ = nullptr; return false;
+        }
+        if (!WriteReg(bmp_, 0xE0, 0xB6)) return false;
+        esp_rom_delay_us(10000);
+        uint8_t c[24];
+        if (!ReadReg(bmp_, 0x88, c, sizeof(c))) return false;
+        cal_.t1 = (uint16_t)(c[1] << 8 | c[0]); cal_.t2 = (int16_t)(c[3] << 8 | c[2]);
+        cal_.t3 = (int16_t)(c[5] << 8 | c[4]); cal_.p1 = (uint16_t)(c[7] << 8 | c[6]);
+        cal_.p2 = (int16_t)(c[9] << 8 | c[8]); cal_.p3 = (int16_t)(c[11] << 8 | c[10]);
+        cal_.p4 = (int16_t)(c[13] << 8 | c[12]); cal_.p5 = (int16_t)(c[15] << 8 | c[14]);
+        cal_.p6 = (int16_t)(c[17] << 8 | c[16]); cal_.p7 = (int16_t)(c[19] << 8 | c[18]);
+        cal_.p8 = (int16_t)(c[21] << 8 | c[20]); cal_.p9 = (int16_t)(c[23] << 8 | c[22]);
+        if (cal_.p1 == 0 || !WriteReg(bmp_, 0xF5, 0xA0)) return false;
+        return WriteReg(bmp_, 0xF4, 0x27);
+    }
+public:
+    explicit EnvironmentSensors(i2c_master_bus_handle_t bus) : bus_(bus) {
+        if (AddDevice(0x38, &aht_)) {
+            const uint8_t init[] = {0xBE, 0x08, 0x00}; Write(aht_, init, sizeof(init)); esp_rom_delay_us(10000);
+        }
+        bmp_ready_ = InitBmp(0x76);
+        if (!bmp_ready_) bmp_ready_ = InitBmp(0x77);
+        ESP_LOGI(TAG, "AHT20: %s, BMP280: %s", aht_ ? "found" : "not found", bmp_ready_ ? "found" : "not found");
+    }
+    bool ReadAht(float& temperature, float& humidity) {
+        if (!aht_) return false;
+        const uint8_t cmd[] = {0xAC, 0x33, 0x00};
+        if (!Write(aht_, cmd, sizeof(cmd))) return false;
+        esp_rom_delay_us(85000);
+        uint8_t d[6];
+        if (i2c_master_receive(aht_, d, sizeof(d), 100) != ESP_OK || (d[0] & 0x80)) return false;
+        uint32_t rh = ((uint32_t)d[1] << 12) | ((uint32_t)d[2] << 4) | (d[3] >> 4);
+        uint32_t rt = (((uint32_t)d[3] & 0x0F) << 16) | ((uint32_t)d[4] << 8) | d[5];
+        humidity = rh * 100.0f / 1048576.0f;
+        temperature = rt * 200.0f / 1048576.0f - 50.0f;
+        return true;
+    }
+    bool ReadBmp(float& temperature, float& pressure_hpa) {
+        if (!bmp_ready_) return false;
+        uint8_t d[6]; if (!ReadReg(bmp_, 0xF7, d, sizeof(d))) return false;
+        int32_t ap = ((int32_t)d[0] << 12) | ((int32_t)d[1] << 4) | (d[2] >> 4);
+        int32_t at = ((int32_t)d[3] << 12) | ((int32_t)d[4] << 4) | (d[5] >> 4);
+        double v1 = (((double)at / 16384.0 - cal_.t1 / 1024.0) * cal_.t2);
+        double v2 = (pow((double)at / 131072.0 - cal_.t1 / 8192.0, 2) * cal_.t3);
+        double tf = v1 + v2; temperature = (float)(tf / 5120.0);
+        double p1 = tf / 2.0 - 64000.0;
+        double p2 = p1 * p1 * cal_.p6 / 32768.0 + p1 * cal_.p5 * 2.0;
+        p2 = p2 / 4.0 + cal_.p4 * 65536.0;
+        p1 = (cal_.p3 * p1 * p1 / 524288.0 + cal_.p2 * p1) / 524288.0;
+        p1 = (1.0 + p1 / 32768.0) * cal_.p1;
+        if (p1 == 0.0) return false;
+        double pressure = (1048576.0 - ap - p2 / 4096.0) * 6250.0 / p1;
+        p1 = cal_.p9 * pressure * pressure / 2147483648.0;
+        p2 = pressure * cal_.p8 / 32768.0;
+        pressure += (p1 + p2 + cal_.p7) / 16.0;
+        pressure_hpa = (float)(pressure / 100.0);
+        return true;
+    }
+};
+
+
 class CompactWifiBoard : public WifiBoard {
 private:
     i2c_master_bus_handle_t display_i2c_bus_;
     esp_lcd_panel_io_handle_t panel_io_ = nullptr;
     esp_lcd_panel_handle_t panel_ = nullptr;
     Display* display_ = nullptr;
+    EnvironmentSensors* sensors_ = nullptr;
     Button boot_button_;
     Button touch_button_;
     Button volume_up_button_;
@@ -150,6 +239,23 @@ private:
     // 物联网初始化，逐步迁移到 MCP 协议
     void InitializeTools() {
         static LampController lamp(LAMP_GPIO);
+        sensors_ = new EnvironmentSensors(display_i2c_bus_);
+        McpServer::GetInstance().AddTool(
+            "environment.get_readings",
+            "Получить текущие показания датчиков AHT20 и BMP280: температуру, относительную влажность и атмосферное давление. Вызывай этот инструмент, когда пользователь спрашивает о температуре, влажности или давлении возле устройства. Отвечай по-русски.",
+            PropertyList(),
+            [this](const PropertyList&) -> ToolResult {
+                float ta = 0, rh = 0, tb = 0, p = 0;
+                bool a = sensors_ && sensors_->ReadAht(ta, rh);
+                bool b = sensors_ && sensors_->ReadBmp(tb, p);
+                if (!a && !b) return std::unexpected("Датчики AHT20 и BMP280 не отвечают. Проверьте питание и I2C GPIO 41/42.");
+                char result[240] = {};
+                if (a && b) snprintf(result, sizeof(result), "AHT20: температура %.1f градуса Цельсия, влажность %.1f процента. BMP280: температура %.1f градуса Цельсия, давление %.1f гектопаскаля.", ta, rh, tb, p);
+                else if (a) snprintf(result, sizeof(result), "AHT20: температура %.1f градуса Цельсия, влажность %.1f процента. BMP280 не отвечает.", ta, rh);
+                else snprintf(result, sizeof(result), "BMP280: температура %.1f градуса Цельсия, давление %.1f гектопаскаля. AHT20 не отвечает.", tb, p);
+                if (GetDisplay()) GetDisplay()->ShowNotification(result, 6000);
+                return std::string(result);
+            });
     }
 
 public:
