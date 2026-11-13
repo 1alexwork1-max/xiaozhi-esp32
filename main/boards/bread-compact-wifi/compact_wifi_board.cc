@@ -92,7 +92,7 @@ public:
         temperature = rt * 200.0f / 1048576.0f - 50.0f;
         return true;
     }
-    bool ReadBmp(float& temperature, float& pressure_hpa) {
+    bool ReadBmp(float& temperature, float& pressure_mmhg) {
         if (!bmp_ready_) return false;
         if (!WriteReg(bmp_, 0xF4, 0x25)) return false; // x1 temperature, x1 pressure, forced mode
         esp_rom_delay_us(10000);
@@ -112,7 +112,7 @@ public:
         p1 = cal_.p9 * pressure * pressure / 2147483648.0;
         p2 = pressure * cal_.p8 / 32768.0;
         pressure += (p1 + p2 + cal_.p7) / 16.0;
-        pressure_hpa = (float)(pressure / 100.0);
+        pressure_mmhg = (float)(pressure / 133.322387415);
         return true;
     }
 };
@@ -259,9 +259,9 @@ private:
                 bool b = sensors_ && sensors_->ReadBmp(tb, p);
                 if (!a && !b) return std::unexpected("Датчики AHT20 и BMP280 не отвечают. Проверьте питание и I2C GPIO 41/42.");
                 char result[240] = {};
-                if (a && b) snprintf(result, sizeof(result), "AHT20: температура %.1f градуса Цельсия, влажность %.1f процента. BMP280: температура %.1f градуса Цельсия, давление %.1f гектопаскаля.", ta, rh, tb, p);
+                if (a && b) snprintf(result, sizeof(result), "AHT20: температура %.1f градуса Цельсия, влажность %.1f процента. BMP280: температура %.1f градуса Цельсия, давление %.1f миллиметра ртутного столба.", ta, rh, tb, p);
                 else if (a) snprintf(result, sizeof(result), "AHT20: температура %.1f градуса Цельсия, влажность %.1f процента. BMP280 не отвечает.", ta, rh);
-                else snprintf(result, sizeof(result), "BMP280: температура %.1f градуса Цельсия, давление %.1f гектопаскаля. AHT20 не отвечает.", tb, p);
+                else snprintf(result, sizeof(result), "BMP280: температура %.1f градуса Цельсия, давление %.1f миллиметра ртутного столба. AHT20 не отвечает.", tb, p);
                 if (GetDisplay()) GetDisplay()->ShowNotification(result, 6000);
                 return std::string(result);
             });
