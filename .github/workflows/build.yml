@@ -1,8 +1,16 @@
 name: Build Boards
 
 on:
-  # Manual runs exercise the full matrix, including CI-specific options.
   workflow_dispatch:
+    inputs:
+      board:
+        description: "Board to build"
+        type: choice
+        required: true
+        default: bread-compact-wifi-128x64
+        options:
+          - bread-compact-wifi-128x64
+          - all
   push:
     branches:
       - main
@@ -37,11 +45,26 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           BEFORE_SHA: ${{ github.event.before }}
+          INPUT_BOARD: ${{ inputs.board }}
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           CHANGED_FILE="$RUNNER_TEMP/changed-files.txt"
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            git ls-files > "$CHANGED_FILE"
+            if [[ "$INPUT_BOARD" == "all" ]]; then
+              git ls-files > "$CHANGED_FILE"
+            else
+              # Map the manual board choice to its board directory. The
+              # changed-file selector then includes that board's variants only.
+              case "$INPUT_BOARD" in
+                bread-compact-wifi-128x64)
+                  printf '%s\n' 'main/boards/bread-compact-wifi/.manual-build' > "$CHANGED_FILE"
+                  ;;
+                *)
+                  echo "Unsupported manual board selection: $INPUT_BOARD" >&2
+                  exit 1
+                  ;;
+              esac
+            fi
           elif [[ "$EVENT_NAME" == "pull_request" ]]; then
             # Checkout is the synthetic merge commit. Compare the PR branch
             # from its merge base, excluding unrelated updates on main.
