@@ -180,6 +180,7 @@ class WorkflowDiffTests(unittest.TestCase):
         env = dict(os.environ)
         env.update({
             "EVENT_NAME": event, "BEFORE_SHA": before or self.base,
+            "INPUT_BOARD": "bread-compact-wifi-128x64",
             "GITHUB_REF": ref, "GITHUB_WORKSPACE": str(self.root),
             "GITHUB_OUTPUT": str(output), "RUNNER_TEMP": str(self.root),
             "GIT_CONFIG_GLOBAL": str(self.root / "gitconfig"),
@@ -224,17 +225,17 @@ class WorkflowDiffTests(unittest.TestCase):
             {"main/boards/old/config.h", "main/boards/new/config.h"},
         )
 
-    def test_missing_push_baseline_and_manual_run_include_all_files(self):
+    def test_missing_push_baseline_includes_all_files(self):
         self.commit_file("main/boards/example/config.h")
-        for event, before in (("push", "1" * 40), ("workflow_dispatch", self.base)):
-            with self.subTest(event=event):
-                output = self.root / "github-output"
-                if output.exists():
-                    output.unlink()
-                self.assertEqual(
-                    set(self.selected_paths(event=event, before=before)),
-                    set(self.git("ls-files").splitlines()),
-                )
+        output = self.root / "github-output"
+        self.assertEqual(
+            set(self.selected_paths(event="push", before="1" * 40)),
+            set(self.git("ls-files").splitlines()),
+        )
+
+    def test_manual_run_selects_only_the_requested_board(self):
+        selected = self.selected_paths(event="workflow_dispatch")
+        self.assertEqual(selected, ["main/boards/bread-compact-wifi/.manual-build"])
 
 
 if __name__ == "__main__":
