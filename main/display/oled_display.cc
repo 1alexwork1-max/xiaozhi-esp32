@@ -242,7 +242,8 @@ void OledDisplay::SetupUI_128x64() {
 
     /* Layer 2: Status bar - for center text labels */
     status_bar_ = lv_obj_create(screen);
-    lv_obj_set_size(status_bar_, LV_HOR_RES, 16);
+    // Expand the notification overlay to fit three lines on the 128x64 OLED.
+    lv_obj_set_size(status_bar_, LV_HOR_RES, 48);
     lv_obj_set_style_radius(status_bar_, 0, 0);
     lv_obj_set_style_bg_opa(status_bar_, LV_OPA_TRANSP, 0);  // Transparent background
     lv_obj_set_style_border_width(status_bar_, 0, 0);
@@ -252,7 +253,8 @@ void OledDisplay::SetupUI_128x64() {
     lv_obj_align(status_bar_, LV_ALIGN_TOP_MID, 0, 0);        // Overlap with top_bar_
 
     notification_label_ = lv_label_create(status_bar_);
-    lv_obj_set_width(notification_label_, LV_HOR_RES);
+    lv_obj_set_size(notification_label_, LV_HOR_RES, 48);
+    lv_label_set_long_mode(notification_label_, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_align(notification_label_, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(notification_label_, "");
     lv_obj_align(notification_label_, LV_ALIGN_CENTER, 0, 0);
