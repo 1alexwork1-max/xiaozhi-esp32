@@ -258,10 +258,22 @@ private:
                 bool a = sensors_ && sensors_->ReadAht(ta, rh);
                 bool b = sensors_ && sensors_->ReadBmp(tb, p);
                 if (!a && !b) return std::unexpected("Датчики AHT20 и BMP280 не отвечают. Проверьте питание и I2C GPIO 41/42.");
-                char result[240] = {};
-                if (a && b) snprintf(result, sizeof(result), "AHT20: температура %.1f градуса Цельсия, влажность %.1f процента. BMP280: температура %.1f градуса Цельсия, давление %.1f миллиметра ртутного столба.", ta, rh, tb, p);
-                else if (a) snprintf(result, sizeof(result), "AHT20: температура %.1f градуса Цельсия, влажность %.1f процента. BMP280 не отвечает.", ta, rh);
-                else snprintf(result, sizeof(result), "BMP280: температура %.1f градуса Цельсия, давление %.1f миллиметра ртутного столба. AHT20 не отвечает.", tb, p);
+                std::string result;
+                if (a && b) {
+                    result = "AHT20: температура " + std::to_string(ta) +
+                             " градуса Цельсия, влажность " + std::to_string(rh) +
+                             " процента. BMP280: температура " + std::to_string(tb) +
+                             " градуса Цельсия, давление " + std::to_string(p) +
+                             " миллиметра ртутного столба.";
+                } else if (a) {
+                    result = "AHT20: температура " + std::to_string(ta) +
+                             " градуса Цельсия, влажность " + std::to_string(rh) +
+                             " процента. BMP280 не отвечает.";
+                } else {
+                    result = "BMP280: температура " + std::to_string(tb) +
+                             " градуса Цельсия, давление " + std::to_string(p) +
+                             " миллиметра ртутного столба. AHT20 не отвечает.";
+                }
                 // Keep the OLED notification compact; return the full readings for voice.
                 char screen_result[96] = {};
                 if (a && b) snprintf(screen_result, sizeof(screen_result), "T: %.1fC\nH: %.0f%%\nP: %.0f мм рт. ст.", tb, rh, p);
