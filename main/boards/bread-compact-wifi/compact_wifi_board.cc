@@ -263,10 +263,10 @@ private:
                 else if (a) snprintf(result, sizeof(result), "AHT20: температура %.1f градуса Цельсия, влажность %.1f процента. BMP280 не отвечает.", ta, rh);
                 else snprintf(result, sizeof(result), "BMP280: температура %.1f градуса Цельсия, давление %.1f миллиметра ртутного столба. AHT20 не отвечает.", tb, p);
                 // Keep the OLED notification compact; return the full readings for voice.
-                char screen_result[80] = {};
-                if (a && b) snprintf(screen_result, sizeof(screen_result), "T:%.1f H:%.0f P:%.0f мм рт.ст.", tb, rh, p);
-                else if (a) snprintf(screen_result, sizeof(screen_result), "T:%.1f H:%.0f%%", ta, rh);
-                else snprintf(screen_result, sizeof(screen_result), "T:%.1f P:%.0f мм рт.ст.", tb, p);
+                char screen_result[96] = {};
+                if (a && b) snprintf(screen_result, sizeof(screen_result), "T: %.1fC\nH: %.0f%%\nP: %.0f мм рт. ст.", tb, rh, p);
+                else if (a) snprintf(screen_result, sizeof(screen_result), "T: %.1fC\nH: %.0f%%\nBMP280: нет", ta, rh);
+                else snprintf(screen_result, sizeof(screen_result), "T: %.1fC\nH: --\nP: %.0f мм рт. ст.", tb, p);
                 if (GetDisplay()) GetDisplay()->ShowNotification(screen_result, 6000);
                 return std::string(result);
             });
