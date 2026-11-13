@@ -306,3 +306,4 @@ public:
 };
 
 DECLARE_BOARD(CompactWifiBoard);
+
